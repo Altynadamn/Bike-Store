@@ -9,7 +9,6 @@ import csv
 from psycopg2.extras import DictCursor
 import matplotlib.pyplot as plt
 
-
 DBNAME = os.getenv("PGDATABASE", "bikestore")
 USER = os.getenv("PGUSER", "postgres")
 PASSWORD = os.getenv("PGPASSWORD", "1234")
@@ -31,6 +30,7 @@ def run_query(conn, query, csv_out=None, max_print=5):
         rows = cur.fetchall()
         cols = [desc.name for desc in cur.description]
         if csv_out:
+            os.makedirs(os.path.dirname(csv_out), exist_ok=True)
             with open(csv_out, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(cols)
@@ -47,16 +47,16 @@ def main():
     conn = get_conn()
     print("Connected to database:", DBNAME)
 
-    run_query(conn, "SELECT * FROM sales.customers LIMIT 10;", "outputs/customers_sample.csv")
+    run_query(conn, "SELECT * FROM sales.customers LIMIT 10;", "outputs/1_customers_sample.csv")
+
     run_query(conn, """
         SELECT EXTRACT(YEAR FROM o.order_date) AS year,
                SUM(oi.quantity * oi.list_price * (1 - COALESCE(oi.discount,0))) AS revenue
         FROM sales.orders o
         JOIN sales.order_items oi ON o.order_id = oi.order_id
         GROUP BY year ORDER BY year;
-    """, "outputs/revenue_by_year.csv")
+    """, "outputs/2_revenue_by_year.csv")
 
-    # === Analytical queries (examples) ===
     run_query(conn, """
         SELECT p.product_name, SUM(oi.quantity) AS units_sold
         FROM production.products p
@@ -64,7 +64,7 @@ def main():
         GROUP BY p.product_name
         ORDER BY units_sold DESC
         LIMIT 10;
-    """, "outputs/top_products.csv")
+    """, "outputs/3_top_products.csv")
 
     run_query(conn, """
         SELECT s.store_name,
@@ -74,9 +74,57 @@ def main():
         JOIN sales.order_items oi ON o.order_id = oi.order_id
         GROUP BY s.store_name
         ORDER BY revenue DESC;
-    """, "outputs/revenue_by_store.csv")
+    """, "outputs/4_revenue_by_store.csv")
 
-    # === Master dataset export ===
+    run_query(conn, """
+        SELECT b.brand_name,
+               SUM(oi.quantity * oi.list_price * (1 - COALESCE(oi.discount,0))) AS revenue
+        FROM production.brands b
+        JOIN production.products p ON b.brand_id = p.brand_id
+        JOIN sales.order_items oi ON p.product_id = oi.product_id
+        JOIN sales.orders o ON oi.order_id = o.order_id
+        GROUP BY b.brand_name
+        ORDER BY revenue DESC;
+    """, "outputs/5_revenue_by_brand.csv")
+
+    run_query(conn, """
+        SELECT c.category_name,
+               ROUND(AVG(oi.discount), 2) AS avg_discount
+        FROM production.categories c
+        JOIN production.products p ON c.category_id = p.category_id
+        JOIN sales.order_items oi ON p.product_id = oi.product_id
+        GROUP BY c.category_name
+        ORDER BY avg_discount DESC;
+    """, "outputs/6_avg_discount_by_category.csv")
+
+    run_query(conn, """
+        SELECT order_status, COUNT(*) AS total_orders
+        FROM sales.orders
+        GROUP BY order_status
+        ORDER BY total_orders DESC;
+    """, "outputs/7_orders_by_status.csv")
+
+    run_query(conn, """
+        SELECT st.first_name || ' ' || st.last_name AS staff_name,
+               SUM(oi.quantity * oi.list_price * (1 - COALESCE(oi.discount,0))) AS total_revenue
+        FROM sales.staffs st
+        JOIN sales.orders o ON st.staff_id = o.staff_id
+        JOIN sales.order_items oi ON o.order_id = oi.order_id
+        GROUP BY staff_name
+        ORDER BY total_revenue DESC;
+    """, "outputs/8_revenue_by_staff.csv")
+
+    run_query(conn, """
+        SELECT c.first_name || ' ' || c.last_name AS customer_name,
+               SUM(oi.quantity * oi.list_price * (1 - COALESCE(oi.discount,0))) AS total_spent
+        FROM sales.customers c
+        JOIN sales.orders o ON c.customer_id = o.customer_id
+        JOIN sales.order_items oi ON o.order_id = oi.order_id
+        GROUP BY customer_name
+        ORDER BY total_spent DESC
+        LIMIT 10;
+    """, "outputs/9_top_customers.csv")
+
     run_query(conn, """
         SELECT 
             o.order_id,
@@ -103,15 +151,13 @@ def main():
         JOIN production.products p ON oi.product_id = p.product_id
         JOIN production.brands b ON p.brand_id = b.brand_id
         JOIN production.categories cat ON p.category_id = cat.category_id;
-    """, "bikestore_dataset.csv")
-
+    """, "outputs/10_master_dataset.csv")
 
     plot_revenue_by_year(conn)
     plot_top_products(conn)
 
     conn.close()
     print("Done ✅")
-
 
 def plot_revenue_by_year(conn):
     query = """
@@ -130,6 +176,7 @@ def plot_revenue_by_year(conn):
     plt.title("Revenue by Year")
     plt.xlabel("Year")
     plt.ylabel("Revenue ($)")
+    os.makedirs("outputs", exist_ok=True)
     plt.savefig("outputs/revenue_by_year.png")
     plt.close()
     print("📊 Saved outputs/revenue_by_year.png")
@@ -148,18 +195,15 @@ def plot_top_products(conn):
     units = [int(r['units_sold']) for r in rows]
 
     plt.figure(figsize=(10,6))
-    plt.barh(products[::-1], units[::-1])  # reverse for nice order
+    plt.barh(products[::-1], units[::-1]) 
     plt.title("Top 10 Products by Units Sold")
     plt.xlabel("Units Sold")
     plt.ylabel("Product")
     plt.tight_layout()
+    os.makedirs("outputs", exist_ok=True)
     plt.savefig("outputs/top_products.png")
     plt.close()
     print("📊 Saved outputs/top_products.png")
 
-
 if __name__ == "__main__":
     main()
-
-
-
