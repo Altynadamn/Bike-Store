@@ -8,26 +8,16 @@ import os
 from openpyxl import load_workbook
 from openpyxl.formatting.rule import ColorScaleRule
 
-# -----------------------------
-# DB CONNECTION
-# -----------------------------
 engine = create_engine(
     f"postgresql+psycopg2://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
 )
 
-# Make sure folders exist
 (os.makedirs("charts", exist_ok=True))
 (os.makedirs("exports", exist_ok=True))
 
-# -----------------------------
-# Helper: Run SQL → DataFrame
-# -----------------------------
 def run_query(sql):
     return pd.read_sql(sql, engine)
 
-# -----------------------------
-# 1. VISUALIZATIONS (6 charts)
-# -----------------------------
 def generate_charts():
     queries = {
         "pie": {
@@ -136,9 +126,6 @@ def generate_charts():
 
         print(f"✅ {chart_type} chart saved → {filename}, rows={len(df)}")
 
-# -----------------------------
-# 2. TIME SLIDER (PLOTLY)
-# -----------------------------
 def interactive_plot():
     sql = """
         SELECT DATE(o.order_date) AS order_date, s.store_name, SUM(oi.quantity) AS qty
@@ -169,9 +156,6 @@ def interactive_plot():
 
     fig.show()
 
-# -----------------------------
-# 3. EXPORT TO EXCEL (MODIFIED)
-# -----------------------------
 def export_to_excel(dataframes_dict, filename):
     with pd.ExcelWriter(filename, engine="openpyxl") as writer:
         for sheet, df in dataframes_dict.items():
@@ -188,7 +172,6 @@ def export_to_excel(dataframes_dict, filename):
         ws.freeze_panes = "B2"
         ws.auto_filter.ref = ws.dimensions
 
-        # ✅ Only apply gradient to order_revenue column in OrdersReport
         if sheet == "OrdersReport":
             for col in ws.iter_cols(min_row=1, max_col=ws.max_column, max_row=1):
                 if col[0].value == "order_revenue":
@@ -201,12 +184,8 @@ def export_to_excel(dataframes_dict, filename):
                     break
 
     wb.save(filename)
-    print(f"✅ Created file {filename}, {len(dataframes_dict)} sheets, rows ~{ws.max_row}")
+    print(f"File is Created {filename}, {len(dataframes_dict)} sheets, rows ~{ws.max_row}")
 
-
-# -----------------------------
-# MAIN
-# -----------------------------
 if __name__ == "__main__":
     generate_charts()
     interactive_plot()
